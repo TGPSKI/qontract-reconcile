@@ -104,6 +104,9 @@ helm-test: generate
 unittest: ## Run unit tests
 	uv run pytest --cov=reconcile --cov-report=term-missing --cov-report xml reconcile tools
 
+sim-test: ## Run gitlab-housekeeping simulator tests
+	uv run pytest tools/gitlab_housekeeping_perf_sim/tests/ -v
+
 .PHONY: generate-client
 generate-client:
 	make -C qontract_api generate-openapi-spec

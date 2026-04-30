@@ -104,6 +104,10 @@ dev = [
     "types-requests",
     "types-tabulate",
     "types-toml",
+    # gitlab-housekeeping perf simulator (tools/gitlab_housekeeping_perf_sim)
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.20",
+    "httpx>=0.24",
 ]
 
 [project.scripts]
