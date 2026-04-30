@@ -7,7 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
   <style>
-    :root { --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --green: #2ea043; --purple: #a371f7; --yellow: #d29922; }
+    :root { --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --green: #2ea043; --purple: #a371f7; --yellow: #d29922; --red: #f85149; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; }
     body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); font-size: 0.88rem; display: flex; flex-direction: column; overflow: hidden; }
@@ -99,7 +99,15 @@
     .kcard { font-size: 0.75rem; padding: 0.15rem 0.4rem; border-radius: 4px; background: #21262d; border: 1px solid #30363d; transition: transform 0.2s, background 0.2s, opacity 0.2s, box-shadow 0.2s; }
     .kcard.just-rebased { background: #2d1f6f; border-color: var(--purple); box-shadow: 0 0 7px 2px rgba(163,113,247,0.55); transform: scale(1.06); }
     .kcard.just-merged { background: #0d3320; border-color: var(--green); box-shadow: 0 0 7px 2px rgba(46,160,67,0.55); transform: scale(1.06); }
+    .kcard.force-merged { background: #3d1418; border-color: var(--red); box-shadow: 0 0 7px 2px rgba(248,81,73,0.55); transform: scale(1.06); color: var(--red); }
+    .kcard.ci-failed { background: #2d1418; border-color: var(--red); box-shadow: 0 0 5px 1px rgba(248,81,73,0.35); color: var(--red); }
     .kcard.muted { opacity: 0.5; }
+    .scenario-info { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.9rem; margin-bottom: 0.7rem; font-size: 0.78rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; }
+    .scenario-info .si-item { display: flex; gap: 0.3rem; align-items: center; }
+    .scenario-info .si-label { color: var(--muted); }
+    .scenario-info .si-val { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .scenario-info .si-val.danger { color: var(--red); }
+    .scenario-info .si-title { color: var(--accent); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
     .merge-group { display: inline-flex; flex-wrap: wrap; gap: 0.2rem; padding: 0.2rem 0.35rem; border: 1px solid #21262d; border-radius: 5px; background: #0d1117; margin-bottom: 0.2rem; }
     .merge-group.recent { border-color: var(--green); background: #0a1f15; }
     .mg-label { font-size: 0.58rem; color: var(--muted); width: 100%; }
@@ -125,6 +133,13 @@
     .swim-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 0.25rem; }
     .swim-controls { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; margin-top: 0.4rem; flex-wrap: wrap; }
     .swim-controls input { width: 4.5rem; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 0.2rem 0.3rem; }
+
+    /* Monte Carlo tab */
+    #panelMonteCarlo .mc-toggle { font-size:0.75rem; padding:0.2rem 0.5rem; border:1px solid var(--border); border-radius:5px; background:var(--panel); color:var(--muted); cursor:pointer; }
+    #panelMonteCarlo .mc-toggle.active { border-color:var(--accent); color:var(--text); background:rgba(56,139,253,0.08); }
+    .mc-sig-pos { color: var(--green); font-weight: 600; }
+    .mc-sig-neg { color: var(--red); font-weight: 600; }
+    .mc-sig-none { color: var(--muted); }
   </style>
 </head>
 <body>
@@ -135,6 +150,7 @@
       <button class="nav-tab" data-tab="stats">Statistics</button>
       <button class="nav-tab" data-tab="kanban">Kanban</button>
       <button class="nav-tab" data-tab="charts">Composition</button>
+      <button class="nav-tab" data-tab="monteCarlo">Monte Carlo</button>
     </nav>
   </div>
 
@@ -162,6 +178,7 @@
 
   <!-- Tab: Statistics -->
   <div class="tab-panel" id="panelStats">
+    <div id="scenarioInfoCard"></div>
     <div class="series-selector" id="seriesSelector"></div>
     <div class="hero-cards" id="heroCards"></div>
     <div class="metric-picker" id="metricPicker"></div>
@@ -203,7 +220,9 @@
       <span><i style="background:rgba(163,113,247,0.9)"></i>CI Running</span>
       <span><i style="background:rgba(46,160,67,0.9)"></i>Ready</span>
       <span><i style="background:rgba(210,153,34,0.9)"></i>Stale</span>
+      <span><i style="background:#f85149"></i>CI Failed</span>
       <span><i style="background:#58a6ff; border-radius:50%"></i>Merged</span>
+      <span><i style="background:#f85149; clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%); width:12px;height:12px"></i>Force-merge</span>
     </div>
     <div class="swim-controls">
       <label>From <input type="number" id="rmin" value="0" min="0" /></label>
@@ -212,21 +231,81 @@
     </div>
   </div>
 
+  <!-- Tab: Monte Carlo -->
+  <div class="tab-panel" id="panelMonteCarlo">
+    <div class="mc-load-section">
+      <div class="drop-zone" id="mcDropZone" style="max-width:500px;margin:1rem auto">
+        Drop <code>monte-carlo-summary.csv</code> here or click to open
+      </div>
+      <input type="file" id="mcFileInput" accept=".csv" hidden />
+    </div>
+    <div id="mcContent" style="display:none">
+      <div class="mc-controls" style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
+        <div>
+          <span style="font-size:0.72rem;color:var(--muted);font-weight:600">Metric:</span>
+          <select id="mcMetricSelect" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:0.2rem 0.4rem;font-size:0.78rem"></select>
+        </div>
+        <div id="mcPolicyToggles" style="display:flex;gap:0.3rem;flex-wrap:wrap"></div>
+        <div>
+          <span style="font-size:0.72rem;color:var(--muted);font-weight:600">Compare:</span>
+          <select id="mcCompareA" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:0.2rem 0.4rem;font-size:0.78rem"></select>
+          <span style="color:var(--muted);font-size:0.78rem">vs</span>
+          <select id="mcCompareB" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:0.2rem 0.4rem;font-size:0.78rem"></select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+        <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:0.8rem">
+          <h3 style="font-size:0.82rem;margin-bottom:0.5rem;color:var(--text)">Distribution (Box + Strip)</h3>
+          <div style="height:280px"><canvas id="mcBoxChart"></canvas></div>
+        </div>
+        <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:0.8rem">
+          <h3 style="font-size:0.82rem;margin-bottom:0.5rem;color:var(--text)">Confidence Intervals</h3>
+          <div style="height:280px"><canvas id="mcCIChart"></canvas></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:1rem;margin-bottom:1rem">
+        <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:0.8rem;overflow-x:auto">
+          <h3 style="font-size:0.82rem;margin-bottom:0.5rem;color:var(--text)">Statistical Summary</h3>
+          <table class="cmp" id="mcStatsTable"></table>
+        </div>
+        <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:0.8rem">
+          <h3 style="font-size:0.82rem;margin-bottom:0.5rem;color:var(--text)">Pairwise Comparison</h3>
+          <div id="mcPairwise" style="font-size:0.78rem"></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+        <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:0.8rem">
+          <h3 style="font-size:0.82rem;margin-bottom:0.5rem;color:var(--text)">Rank Summary</h3>
+          <div style="height:180px"><canvas id="mcRankChart"></canvas></div>
+        </div>
+        <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:0.8rem">
+          <h3 style="font-size:0.82rem;margin-bottom:0.5rem;color:var(--text)">Winner Heatmap</h3>
+          <div id="mcHeatmap" style="overflow-x:auto"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
   (function () {
-    const C0 = { other: "rgba(110,118,129,0.9)", active: "rgba(163,113,247,0.9)", pool: "rgba(46,160,67,0.9)", stale: "rgba(210,153,34,0.9)", pending: "#6e7681", running: "#a371f7", success: "#2ea043", merged: "rgba(31,111,235,0.55)" };
+    const C0 = { other: "rgba(110,118,129,0.9)", active: "rgba(163,113,247,0.9)", pool: "rgba(46,160,67,0.9)", stale: "rgba(210,153,34,0.9)", pending: "#6e7681", running: "#a371f7", success: "#2ea043", merged: "rgba(31,111,235,0.55)", failed: "#f85149", force_merge: "#f85149" };
     const BASE_MS = 500, HIGHLIGHT_TICKS = 3;
     let playhead = 0, playTimer = null, xRange = [0, 100];
     let filesData = [], activeIndex = 0;
 
     // --- Parsing & Analysis ---
     function parseNdjson(t) { return t.split("\n").map(l => l.trim()).filter(Boolean).map(j => { try { return JSON.parse(j); } catch { return null; } }).filter(Boolean); }
-    function filterE(arr) { return (Array.isArray(arr) ? arr : []).filter(e => e && e.event !== "api_call"); }
+    function filterE(arr) {
+      const base = (Array.isArray(arr) ? arr : []).filter(e => e && e.event !== "api_call");
+      const extra = [];
+      base.forEach(e => { if (e.event === "tick" && Array.isArray(e.force_merges)) e.force_merges.forEach(fm => extra.push(fm)); });
+      return base.concat(extra);
+    }
     function pct(a, p) { if (!a.length) return 0; const s = [...a].sort((u, v) => u - v); return s[Math.min(s.length - 1, Math.floor(s.length * p / 100))]; }
 
     function buildSwimlaneSegs(evs, maxT) {
       const segs = [], pipe = new Map();
-      evs.forEach(e => { if (e.event === "rebase" && e.pipeline_id != null) pipe.set(e.pipeline_id, { mr: e.mr_iid, rebaseTick: e.tick }); });
+      evs.forEach(e => { if (e.event === "rebase" && e.pipeline_id != null) pipe.set(e.pipeline_id, { mr: e.mr_iid, rebaseTick: e.tick, outcome: e.pipeline_outcome || null }); });
       evs.forEach(e => {
         if (e.event !== "tick" || !e.transitions) return;
         e.transitions.forEach(tr => {
@@ -235,6 +314,7 @@
           if (tr.mr_iid == null) return;
           if (m === "pending" && n === "running" && p) { segs.push({ mr: tr.mr_iid, start: p.rebaseTick, end: e.tick, kind: "pending" }); p.runAt = e.tick; }
           else if (m === "running" && n === "success" && p && p.runAt != null) { segs.push({ mr: tr.mr_iid, start: p.runAt, end: e.tick, kind: "running" }); p.succAt = e.tick; }
+          else if (m === "running" && n === "failed" && p && p.runAt != null) { segs.push({ mr: tr.mr_iid, start: p.runAt, end: e.tick, kind: "failed" }); p.failedAt = e.tick; }
         });
       });
       const allMergeTicks = evs.filter(e => e.event === "merge").map(e => e.tick).sort((a, b) => a - b);
@@ -262,12 +342,20 @@
           }
         }
       });
-      const mergeTick = new Map();
-      evs.forEach(e => { if (e.event === "merge" && e.mr_iid != null) { mergeTick.set(e.mr_iid, e.tick); segs.push({ mr: e.mr_iid, start: e.tick, end: e.tick + Math.max(1, maxT * 0.006), kind: "merged" }); } });
-      // Trim all segments to not extend past the MR's merge tick
-      segs.forEach(s => { const mt = mergeTick.get(s.mr); if (mt != null && s.kind !== "merged" && s.end > mt) s.end = mt; });
+      const mergeTick = new Map(), forceMergeTicks = [];
+      evs.forEach(e => {
+        if (e.event === "merge" && e.mr_iid != null) {
+          mergeTick.set(e.mr_iid, e.tick);
+          const kind = e.force_merge ? "force_merge" : "merged";
+          segs.push({ mr: e.mr_iid, start: e.tick, end: e.tick + Math.max(1, maxT * 0.006), kind });
+          if (e.force_merge) forceMergeTicks.push(e.tick);
+        }
+      });
+      segs.forEach(s => { const mt = mergeTick.get(s.mr); if (mt != null && s.kind !== "merged" && s.kind !== "force_merge" && s.end > mt) s.end = mt; });
       segs.forEach(s => { s.end = Math.max(s.end, s.start); });
-      return segs.filter(s => s.end > s.start).sort((a, b) => a.mr - b.mr || a.start - b.start);
+      const result = segs.filter(s => s.end > s.start).sort((a, b) => a.mr - b.mr || a.start - b.start);
+      result._forceMergeTicks = forceMergeTicks;
+      return result;
     }
 
     function analyze(raw) {
@@ -301,8 +389,20 @@
     }
     function storyAt(evs, t) {
       const a = [];
-      evs.forEach(e => { if (e.tick === t) { if (e.event === "rebase") a.push("Rebased !" + e.mr_iid); if (e.event === "merge") a.push("Merged !" + e.mr_iid); } });
-      evs.forEach(e => { if (e.event === "tick" && e.tick === t) (e.transitions || []).forEach(tr => a.push("!" + tr.mr_iid + ": " + tr.from + " → " + tr.to)); });
+      evs.forEach(e => {
+        if (e.tick === t) {
+          if (e.event === "rebase") a.push("Rebased !" + e.mr_iid);
+          if (e.event === "merge" && e.force_merge) a.push("FORCE-MERGED !" + e.mr_iid + " (bypassed queue)");
+          else if (e.event === "merge") a.push("Merged !" + e.mr_iid);
+        }
+      });
+      evs.forEach(e => {
+        if (e.event === "tick" && e.tick === t) (e.transitions || []).forEach(tr => {
+          const to = (tr.to || "").toLowerCase();
+          if (to === "failed") a.push("!" + tr.mr_iid + ": CI failed");
+          else a.push("!" + tr.mr_iid + ": " + tr.from + " → " + tr.to);
+        });
+      });
       return a.length ? a : ["Clock advanced."];
     }
 
@@ -317,18 +417,21 @@
       const mTicks = mergeE.map(e => e.tick).sort((a, b) => a - b);
       const mergeRounds = new Set(mergeE.map(e => e.tick)).size;
       const o0 = packed.series.open.find(v => v > 0) ?? 0;
-      // CI time per MR (from running segments)
       const ciTimes = packed.segs.filter(s => s.kind === "running").map(s => s.end - s.start);
       const ciMin = ciTimes.length ? Math.min(...ciTimes) : 0;
       const ciMax = ciTimes.length ? Math.max(...ciTimes) : 0;
       const ciAvg = ciTimes.length ? ciTimes.reduce((a, b) => a + b, 0) / ciTimes.length : 0;
+      const forceMergeCount = mergeE.filter(e => e.force_merge).length;
+      let ciFailures = 0;
+      tickE.forEach(e => { (e.transitions || []).forEach(tr => { if ((tr.to || "").toLowerCase() === "failed") ciFailures++; }); });
       return {
         packed, total_time_ticks: totalT, mrs_merged: mergeE.length, throughput: mergeE.length / Math.max(1, totalT),
         time_to_first: mTicks[0] ?? totalT, time_to_10: mTicks[9] ?? totalT, avg_int: totalT / Math.max(1, mergeE.length),
         queue_drain: o0 ? (100 * mergeE.length) / o0 : 0, rebase_calls: rebaseE.length, pipelines: rebaseE.length,
         peak, dup, stale_max: stL.length ? Math.max(...stL) : 0, srp_p95: pct(srpL, 95), srp_max: srpL.length ? Math.max(...srpL) : 0,
         merge_rounds: mergeRounds, avg_mrs_per_round: mergeE.length / Math.max(1, mergeRounds),
-        ci_min: ciMin, ci_max: ciMax, ci_avg: ciAvg, mr_count: allIids(f).size
+        ci_min: ciMin, ci_max: ciMax, ci_avg: ciAvg, mr_count: allIids(f).size,
+        force_merges: forceMergeCount, ci_failures: ciFailures
       };
     }
 
@@ -343,6 +446,7 @@
       if (name === "kanban") renderKanbanTab();
       if (name === "charts") { renderChartPolicyTabs(); refreshCharts(); }
       if (name === "stats") renderStats();
+      if (name === "monteCarlo") renderMonteCarlo();
     }
     document.getElementById("navTabs").addEventListener("click", e => { if (e.target.dataset.tab) switchTab(e.target.dataset.tab); });
 
@@ -355,7 +459,7 @@
 
     function loadFiles(fl) {
       const a = Array.from(fl); if (!a.length) return;
-      Promise.all(a.map(F => new Promise((R, N) => { const r = new FileReader(); r.onload = () => R({ n: F.name.replace(/\.(ndjson|jsonl|json)$/i, ""), t: r.result }); r.onerror = N; r.readAsText(F); }))).then(A => {
+      Promise.all(a.map(F => new Promise((R, N) => { const r = new FileReader(); r.onload = () => R({ n: F.name.replace(/(-metrics)?\.(ndjson|jsonl|json)$/i, ""), t: r.result }); r.onerror = N; r.readAsText(F); }))).then(A => {
         filesData = A.map(x => ({ name: x.n, events: parseNdjson(x.t) }));
         activeIndex = 0; chartIdxL = 0; chartIdxR = Math.min(1, A.length - 1); stop();
         filesData.forEach(d => { if (!d.metrics) { const M = computeFileMetrics(d.events); d.metrics = M; d.packed = M.packed; } });
@@ -393,13 +497,16 @@
       srp_max: "Maximum same-root success pool size observed",
       merge_rounds: "Number of distinct ticks where at least one merge occurred",
       avg_mrs_per_round: "Average number of MRs merged per merge round (batch efficiency)",
-      mr_count: "Total unique MRs that appeared in the simulation"
+      mr_count: "Total unique MRs that appeared in the simulation",
+      force_merges: "Number of MRs that bypassed the queue via operator force-merge",
+      ci_failures: "Total pipeline failures observed during the simulation"
     };
     const METRIC_HIGHER_IS_BETTER = {
       mrs_merged: true, throughput: true, queue_drain: true, merge_rounds: true, avg_mrs_per_round: true,
       total_time_ticks: null, time_to_first: false, time_to_10: false, avg_int: false,
       rebase_calls: false, peak: false, dup: false, ci_min: null, ci_avg: null, ci_max: null,
-      srp_p95: false, srp_max: false, mr_count: true
+      srp_p95: false, srp_max: false, mr_count: true,
+      force_merges: null, ci_failures: false
     };
 
     function renderSeriesSelector() {
@@ -442,8 +549,35 @@
     ];
     let heroMetricKeys = ["mrs_merged", "throughput", "queue_drain", "dup", "time_to_10", "rebase_calls"];
 
+    function renderScenarioInfoCard() {
+      const el = document.getElementById("scenarioInfoCard");
+      const meta = filesData.map(d => (d.events || []).find(e => e.event === "scenario_meta")).filter(Boolean);
+      if (!meta.length) { el.innerHTML = ""; return; }
+      const m = meta[0];
+      let html = `<div class="scenario-info"><span class="si-title">Scenario</span>`;
+      html += `<span class="si-item"><span class="si-label">MRs:</span><span class="si-val">${m.total_mrs}</span></span>`;
+      if (m.pipeline_duration) html += `<span class="si-item"><span class="si-label">CI Duration:</span><span class="si-val">${m.pipeline_duration.min}–${m.pipeline_duration.max} ticks</span></span>`;
+      html += `<span class="si-item"><span class="si-label">Failure Rate:</span><span class="si-val${m.failure_rate > 0 ? ' danger' : ''}">${(m.failure_rate * 100).toFixed(1)}%</span></span>`;
+      if (m.force_merges && m.force_merges.length) {
+        const fmStr = m.force_merges.map(f => `!${f.iid} @t${f.tick}`).join(", ");
+        html += `<span class="si-item"><span class="si-label">Force-merges:</span><span class="si-val danger">${fmStr}</span></span>`;
+      }
+      if (m.cancellations && m.cancellations.length) {
+        const cStr = m.cancellations.map(c => `!${c.iid} @t${c.tick}`).join(", ");
+        html += `<span class="si-item"><span class="si-label">Cancellations:</span><span class="si-val">${cStr}</span></span>`;
+      }
+      if (m.arrivals && m.arrivals.length) {
+        html += `<span class="si-item"><span class="si-label">Arrivals:</span><span class="si-val">${m.arrivals.length}</span></span>`;
+      }
+      if (m.scheduled_target_advances && Object.keys(m.scheduled_target_advances).length) {
+        html += `<span class="si-item"><span class="si-label">External advances:</span><span class="si-val">${Object.keys(m.scheduled_target_advances).length}</span></span>`;
+      }
+      html += `</div>`;
+      el.innerHTML = html;
+    }
     function renderStats() {
       if (!filesData.length) return;
+      renderScenarioInfoCard();
       renderSeriesSelector();
       renderMetricPicker();
       const metrics = filesData.map(d => d.metrics);
@@ -485,7 +619,8 @@
       const rows = [
         ["s", "── Throughput & Time ──"], ["total_time_ticks", "Total time (steps)", "d0"], ["mrs_merged", "MRs merged", "d0"], ["throughput", "Throughput", "d3"],
         ["time_to_first", "Time to first merge", "d0"], ["time_to_10", "Time to merge 10", "d0"], ["avg_int", "Avg merge interval", "d0"], ["queue_drain", "Queue drain %", "d0"],
-        ["s", "── CI ──"], ["rebase_calls", "Rebases", "d0"], ["peak", "Peak active", "d0"], ["dup", "Wasted rebases", "d0"], ["ci_min", "CI min (ticks)", "d0"], ["ci_avg", "CI avg (ticks)", "d1"], ["ci_max", "CI max (ticks)", "d0"],
+        ["s", "── CI ──"], ["rebase_calls", "Rebases", "d0"], ["peak", "Peak active", "d0"], ["dup", "Wasted rebases", "d0"], ["ci_min", "CI min (ticks)", "d0"], ["ci_avg", "CI avg (ticks)", "d1"], ["ci_max", "CI max (ticks)", "d0"], ["ci_failures", "CI Failures", "d0"],
+        ["s", "── Events ──"], ["force_merges", "Force-merges", "d0"],
         ["s", "── Pool ──"], ["srp_p95", "Same-root p95", "d0"], ["srp_max", "Same-root max", "d0"],
         ["s", "── Batch ──"], ["merge_rounds", "Merge rounds", "d0"], ["avg_mrs_per_round", "Avg MRs/round", "d3"], ["mr_count", "Total MRs seen", "d0"]
       ];
@@ -555,8 +690,15 @@
           ["Waiting", "Rebasing", "CI", "Ready", "Merged"].forEach(n => { colHdr.innerHTML += `<div class="col-hd">${n}</div>`; });
           body.appendChild(colHdr);
 
-          const rebasedRecent = new Set(), mergedRecent = new Set();
-          for (let dt = 0; dt < HIGHLIGHT_TICKS; dt++) { const tt = t - dt; f.forEach(e => { if (e.tick === tt && e.mr_iid != null) { if (e.event === "rebase") rebasedRecent.add(e.mr_iid); if (e.event === "merge") mergedRecent.add(e.mr_iid); } }); }
+          const rebasedRecent = new Set(), mergedRecent = new Set(), forceMergedRecent = new Set(), ciFailedRecent = new Set();
+          for (let dt = 0; dt < HIGHLIGHT_TICKS; dt++) { const tt = t - dt; f.forEach(e => {
+            if (e.tick === tt && e.mr_iid != null) {
+              if (e.event === "rebase") rebasedRecent.add(e.mr_iid);
+              if (e.event === "merge" && e.force_merge) forceMergedRecent.add(e.mr_iid);
+              else if (e.event === "merge") mergedRecent.add(e.mr_iid);
+            }
+            if (e.event === "tick" && e.tick === tt) (e.transitions || []).forEach(tr => { if ((tr.to || "").toLowerCase() === "failed") ciFailedRecent.add(tr.mr_iid); });
+          }); }
 
           const cards = document.createElement("div");
           cards.className = "trace-cards";
@@ -574,17 +716,19 @@
                   const grp = document.createElement("div");
                   grp.className = "merge-group" + (isRecent ? " recent" : "");
                   grp.innerHTML = `<span class="mg-label">t=${mt} (${mrs.length})</span>`;
-                  mrs.forEach(m => { const c = document.createElement("div"); c.className = "kcard" + (isRecent ? " just-merged" : " muted"); c.textContent = "!" + m; grp.appendChild(c); });
+                  mrs.forEach(m => { const c = document.createElement("div"); c.className = "kcard" + (forceMergedRecent.has(m) ? " force-merged" : isRecent ? " just-merged" : " muted"); c.textContent = "!" + m; grp.appendChild(c); });
                   col.appendChild(grp);
                 } else {
-                  mrs.forEach(m => { const c = document.createElement("div"); c.className = "kcard" + (isRecent ? " just-merged" : " muted"); c.textContent = "!" + m; col.appendChild(c); });
+                  mrs.forEach(m => { const c = document.createElement("div"); c.className = "kcard" + (forceMergedRecent.has(m) ? " force-merged" : isRecent ? " just-merged" : " muted"); c.textContent = "!" + m; col.appendChild(c); });
                 }
               });
             } else {
               arr.forEach(m => {
                 const c = document.createElement("div");
                 let cls = "kcard";
-                if (mergedRecent.has(m)) cls += " just-merged";
+                if (forceMergedRecent.has(m)) cls += " force-merged";
+                else if (mergedRecent.has(m)) cls += " just-merged";
+                else if (ciFailedRecent.has(m)) cls += " ci-failed";
                 else if (rebasedRecent.has(m)) cls += " just-rebased";
                 c.className = cls; c.textContent = "!" + m; col.appendChild(c);
               });
@@ -634,7 +778,7 @@
       if (chartViewMode === "compare" && pR) { doChart(pR, "chartCanvasR", "R"); setTimeout(() => d3brush(pR, "brushAreaR", "R"), 30); dSwim(pR, "swimAreaR"); }
     }
 
-    const segC = k => (k === "pending" ? C0.pending : k === "running" ? C0.running : k === "success" ? C0.success : k === "stale" ? C0.stale : k === "merged" ? C0.merged : C0.other);
+    const segC = k => (k === "pending" ? C0.pending : k === "running" ? C0.running : k === "success" ? C0.success : k === "stale" ? C0.stale : k === "merged" ? C0.merged : k === "failed" ? C0.failed : k === "force_merge" ? C0.force_merge : C0.other);
 
     function plMergePlay(p) {
       return { id: "mp", afterDatasetsDraw(chart) {
@@ -682,18 +826,35 @@
       const x = d3.scaleLinear().domain([x0, x1]).range([pad.l, w - pad.r]);
       const g = sw.append("svg").attr("width", w).attr("height", H);
       g.append("g").attr("transform", `translate(0,${H - pad.b})`).call(d3.axisBottom(x).ticks(5));
+      // Force-merge vertical dashed lines (behind everything)
+      const fmTicks = p.segs._forceMergeTicks || [];
+      fmTicks.forEach(ft => {
+        if (ft >= x0 && ft <= x1 && ft <= t) {
+          g.append("line").attr("x1", x(ft)).attr("x2", x(ft)).attr("y1", pad.t).attr("y2", H - pad.b)
+            .attr("stroke", C0.force_merge).attr("stroke-width", 1.5).attr("stroke-dasharray", "4,3").attr("opacity", 0.7);
+        }
+      });
       if (t >= x0 && t <= x1) g.append("line").attr("x1", x(t)).attr("x2", x(t)).attr("y1", pad.t).attr("y2", H - pad.b).attr("stroke", "#4fd").attr("stroke-width", 2);
       const visible = p.segs.filter(s => s.end > x0 && s.start < x1 && s.kind !== "to_running")
-        .map(s => { if (s.start > t) return null; if (s.kind === "merged") return s.start <= t ? s : null; if (s.end <= t) return s; if (s.start < t && s.end > t) return { ...s, end: t, _p: 1 }; return null; })
+        .map(s => { if (s.start > t) return null; if (s.kind === "merged" || s.kind === "force_merge") return s.start <= t ? s : null; if (s.end <= t) return s; if (s.start < t && s.end > t) return { ...s, end: t, _p: 1 }; return null; })
         .filter(s => s && s.end > s.start);
-      visible.filter(s => s.kind !== "merged").forEach(s => g.append("rect").attr("x", x(Math.max(s.start, x0))).attr("y", y(String(s.mr))).attr("height", y.bandwidth())
+      visible.filter(s => s.kind !== "merged" && s.kind !== "force_merge").forEach(s => g.append("rect").attr("x", x(Math.max(s.start, x0))).attr("y", y(String(s.mr))).attr("height", y.bandwidth())
         .attr("width", Math.max(0, x(Math.min(s.end, x1)) - x(Math.max(s.start, x0)))).attr("fill", segC(s.kind)).attr("opacity", s._p ? 0.5 : 0.85).attr("rx", 2));
+      // Normal merged markers (blue circle)
       visible.filter(s => s.kind === "merged").forEach(s => {
         const mx = x(Math.max(s.start, x0)), bw = y.bandwidth(), yt = y(String(s.mr));
         g.append("line").attr("x1", mx).attr("x2", mx).attr("y1", yt - 1).attr("y2", yt + bw + 1)
           .attr("stroke", "#58a6ff").attr("stroke-width", 3).attr("opacity", 1);
         g.append("circle").attr("cx", mx).attr("cy", yt + bw / 2).attr("r", Math.max(3, bw * 0.45))
           .attr("fill", "#58a6ff").attr("stroke", "#0d1117").attr("stroke-width", 1);
+      });
+      // Force-merge markers (red diamond)
+      visible.filter(s => s.kind === "force_merge").forEach(s => {
+        const mx = x(Math.max(s.start, x0)), bw = y.bandwidth(), yt = y(String(s.mr)), cy = yt + bw / 2;
+        const r = Math.max(4, bw * 0.55);
+        g.append("polygon")
+          .attr("points", `${mx},${cy - r} ${mx + r},${cy} ${mx},${cy + r} ${mx - r},${cy}`)
+          .attr("fill", C0.force_merge).attr("stroke", "#0d1117").attr("stroke-width", 1);
       });
     }
 
@@ -735,6 +896,473 @@
       if (pL) { d3brush(pL, "brushAreaL", "L"); dSwim(pL, "swimAreaL"); }
       if (chartViewMode === "compare" && pR) { d3brush(pR, "brushAreaR", "R"); dSwim(pR, "swimAreaR"); }
     });
+
+    // =========================================================================
+    // Monte Carlo Tab
+    // =========================================================================
+    let mcData = null; // { policies: [...], metrics: [...], trials: { policy: { metric: [values] } } }
+    let mcBoxChart = null, mcCIChart = null;
+    let mcVisiblePolicies = new Set();
+
+    const MC_COLORS = ["#58a6ff", "#a371f7", "#2ea043", "#d29922", "#f85149", "#79c0ff", "#d2a8ff", "#56d364"];
+    const MC_METRIC_LABELS = {
+      total_time_ticks: "Total Time (ticks)", mrs_merged: "MRs Merged",
+      throughput_merges_per_tick: "Throughput (merges/tick)", time_to_first_merge: "Time to First Merge",
+      time_to_merge_10: "Time to Merge 10 MRs", avg_merge_interval_ticks: "Avg Merge Interval",
+      queue_drain_pct: "Queue Drain %", rebase_calls: "Rebases",
+      pipelines_created: "Pipelines Created", peak_active_pipelines: "Peak Active Pipelines",
+      duplicate_rebase_total: "Duplicate Rebases", wait_p50: "Wait Time p50 (ticks)",
+      wait_p95: "Wait Time p95 (ticks)", wait_max: "Max Wait (ticks)",
+      starved_mrs: "Starved MRs (>100 ticks)"
+    };
+    const MC_LOWER_BETTER = new Set([
+      "total_time_ticks", "time_to_first_merge", "time_to_merge_10",
+      "avg_merge_interval_ticks", "rebase_calls", "pipelines_created",
+      "peak_active_pipelines", "duplicate_rebase_total",
+      "wait_p50", "wait_p95", "wait_max", "starved_mrs"
+    ]);
+    const MC_SKIP_METRICS = new Set(["total_time_ticks"]);
+
+    const mcDrop = document.getElementById("mcDropZone");
+    const mcInput = document.getElementById("mcFileInput");
+    mcDrop.addEventListener("click", () => mcInput.click());
+    mcDrop.addEventListener("dragover", e => e.preventDefault());
+    mcDrop.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer.files[0]) loadMcCSV(e.dataTransfer.files[0]); });
+    mcInput.addEventListener("change", () => { if (mcInput.files[0]) loadMcCSV(mcInput.files[0]); });
+
+    function loadMcCSV(file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const lines = reader.result.trim().split("\n");
+        const headers = lines[0].split(",").map(h => h.trim());
+        const metricCols = headers.slice(2);
+        const policies = new Set();
+        const trials = {};
+
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(",").map(c => c.trim());
+          const policy = cols[1];
+          policies.add(policy);
+          if (!trials[policy]) trials[policy] = {};
+          metricCols.forEach((m, idx) => {
+            if (!trials[policy][m]) trials[policy][m] = [];
+            const v = parseFloat(cols[idx + 2]);
+            if (!isNaN(v)) trials[policy][m].push(v);
+          });
+        }
+
+        mcData = { policies: [...policies], metrics: metricCols, trials };
+        mcVisiblePolicies = new Set(mcData.policies);
+        initMcControls();
+        document.getElementById("mcContent").style.display = "block";
+        mcDrop.style.display = "none";
+        renderMonteCarlo();
+      };
+      reader.readAsText(file);
+    }
+
+    function initMcControls() {
+      const sel = document.getElementById("mcMetricSelect");
+      sel.innerHTML = mcData.metrics.map(m =>
+        `<option value="${m}">${MC_METRIC_LABELS[m] || m}</option>`
+      ).join("");
+      sel.addEventListener("change", renderMonteCarlo);
+
+      const toggles = document.getElementById("mcPolicyToggles");
+      toggles.innerHTML = mcData.policies.map((p, i) =>
+        `<button class="mc-toggle active" data-policy="${p}" style="border-left:3px solid ${MC_COLORS[i % MC_COLORS.length]}">${p}</button>`
+      ).join("");
+      toggles.addEventListener("click", e => {
+        const btn = e.target.closest(".mc-toggle");
+        if (!btn) return;
+        btn.classList.toggle("active");
+        mcVisiblePolicies = new Set([...toggles.querySelectorAll(".mc-toggle.active")].map(b => b.dataset.policy));
+        renderMonteCarlo();
+      });
+
+      const compA = document.getElementById("mcCompareA");
+      const compB = document.getElementById("mcCompareB");
+      const opts = mcData.policies.map(p => `<option value="${p}">${p}</option>`).join("");
+      compA.innerHTML = opts;
+      compB.innerHTML = opts;
+      if (mcData.policies.length > 1) compB.selectedIndex = 1;
+      compA.addEventListener("change", renderMcPairwise);
+      compB.addEventListener("change", renderMcPairwise);
+    }
+
+    function mcStats(values) {
+      if (!values || !values.length) return { mean: 0, stddev: 0, ci95: 0, min: 0, max: 0, q1: 0, median: 0, q3: 0 };
+      const sorted = [...values].sort((a, b) => a - b);
+      const n = sorted.length;
+      const mean = sorted.reduce((a, b) => a + b, 0) / n;
+      const variance = n > 1 ? sorted.reduce((s, v) => s + (v - mean) ** 2, 0) / (n - 1) : 0;
+      const stddev = Math.sqrt(variance);
+      const ci95 = n > 1 ? 1.96 * stddev / Math.sqrt(n) : 0;
+      const q = p => { const i = p * (n - 1); const lo = Math.floor(i); return lo === i ? sorted[lo] : sorted[lo] + (sorted[lo + 1] - sorted[lo]) * (i - lo); };
+      return { mean, stddev, ci95, min: sorted[0], max: sorted[n - 1], q1: q(0.25), median: q(0.5), q3: q(0.75) };
+    }
+
+    function renderMonteCarlo() {
+      if (!mcData) return;
+      renderMcBoxChart();
+      renderMcCIChart();
+      renderMcStatsTable();
+      renderMcPairwise();
+      renderMcRank();
+      renderMcHeatmap();
+    }
+
+    function renderMcBoxChart() {
+      const metric = document.getElementById("mcMetricSelect").value;
+      const policies = mcData.policies.filter(p => mcVisiblePolicies.has(p));
+      const ctx = document.getElementById("mcBoxChart").getContext("2d");
+
+      if (mcBoxChart) mcBoxChart.destroy();
+
+      const datasets = [];
+      policies.forEach((policy, i) => {
+        const values = mcData.trials[policy]?.[metric] || [];
+        const s = mcStats(values);
+        const color = MC_COLORS[mcData.policies.indexOf(policy) % MC_COLORS.length];
+        // Box plot as floating bars (min-Q1, Q1-median, median-Q3, Q3-max)
+        datasets.push({
+          label: policy,
+          data: [{ x: i, y: [s.q1, s.q3] }],
+          backgroundColor: color + "33",
+          borderColor: color,
+          borderWidth: 1,
+          barPercentage: 0.6,
+          categoryPercentage: 0.8,
+        });
+      });
+
+      // Use scatter for strip plot overlay
+      const stripData = [];
+      policies.forEach((policy, i) => {
+        const values = mcData.trials[policy]?.[metric] || [];
+        const color = MC_COLORS[mcData.policies.indexOf(policy) % MC_COLORS.length];
+        values.forEach(v => {
+          stripData.push({ x: i + (Math.random() - 0.5) * 0.3, y: v, color });
+        });
+      });
+
+      const allValues = policies.flatMap(p => mcData.trials[p]?.[metric] || []);
+      const yMin = allValues.length ? Math.min(...allValues) * 0.9 : 0;
+      const yMax = allValues.length ? Math.max(...allValues) * 1.1 : 100;
+
+      mcBoxChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: policies,
+          datasets: [
+            ...policies.map((policy, i) => {
+              const values = mcData.trials[policy]?.[metric] || [];
+              const s = mcStats(values);
+              const color = MC_COLORS[mcData.policies.indexOf(policy) % MC_COLORS.length];
+              return {
+                label: policy + " IQR",
+                data: [{ x: policy, y: s.q3 - s.q1 }],
+                base: policies.map((p, j) => j === i ? mcStats(mcData.trials[p]?.[metric] || []).q1 : null),
+                backgroundColor: color + "44",
+                borderColor: color,
+                borderWidth: 2,
+                barPercentage: 0.5,
+              };
+            }),
+            {
+              type: "scatter",
+              label: "Trials",
+              data: policies.flatMap((policy, i) => {
+                const values = mcData.trials[policy]?.[metric] || [];
+                return values.map(v => ({ x: i, y: v }));
+              }),
+              backgroundColor: policies.flatMap((policy) => {
+                const values = mcData.trials[policy]?.[metric] || [];
+                const color = MC_COLORS[mcData.policies.indexOf(policy) % MC_COLORS.length];
+                return values.map(() => color + "88");
+              }),
+              pointRadius: 3,
+              pointHoverRadius: 5,
+            }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { enabled: true } },
+          scales: {
+            x: { ticks: { color: "#8b949e" }, grid: { color: "#21262d" } },
+            y: { ticks: { color: "#8b949e" }, grid: { color: "#21262d" }, min: yMin, max: yMax }
+          }
+        }
+      });
+    }
+
+    function renderMcCIChart() {
+      const metric = document.getElementById("mcMetricSelect").value;
+      const policies = mcData.policies.filter(p => mcVisiblePolicies.has(p));
+      const ctx = document.getElementById("mcCIChart").getContext("2d");
+
+      if (mcCIChart) mcCIChart.destroy();
+
+      const means = [];
+      const ciLow = [];
+      const ciHigh = [];
+      const colors = [];
+
+      policies.forEach(policy => {
+        const values = mcData.trials[policy]?.[metric] || [];
+        const s = mcStats(values);
+        means.push(s.mean);
+        ciLow.push(s.mean - s.ci95);
+        ciHigh.push(s.mean + s.ci95);
+        colors.push(MC_COLORS[mcData.policies.indexOf(policy) % MC_COLORS.length]);
+      });
+
+      mcCIChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: policies,
+          datasets: [{
+            label: "Mean",
+            data: means,
+            backgroundColor: colors.map(c => c + "66"),
+            borderColor: colors,
+            borderWidth: 2,
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                afterLabel: (ctx) => {
+                  const i = ctx.dataIndex;
+                  return `CI95: [${ciLow[i].toFixed(2)}, ${ciHigh[i].toFixed(2)}]`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: { ticks: { color: "#8b949e" }, grid: { color: "#21262d" } },
+            y: { ticks: { color: "#8b949e" }, grid: { color: "#21262d" } }
+          }
+        },
+        plugins: [{
+          id: "errorBars",
+          afterDraw(chart) {
+            const { ctx, scales: { x, y } } = chart;
+            ctx.save();
+            ctx.lineWidth = 2;
+            policies.forEach((_, i) => {
+              const xPos = x.getPixelForValue(i);
+              const yLo = y.getPixelForValue(ciLow[i]);
+              const yHi = y.getPixelForValue(ciHigh[i]);
+              ctx.strokeStyle = colors[i];
+              ctx.beginPath();
+              ctx.moveTo(xPos, yLo); ctx.lineTo(xPos, yHi);
+              ctx.moveTo(xPos - 4, yLo); ctx.lineTo(xPos + 4, yLo);
+              ctx.moveTo(xPos - 4, yHi); ctx.lineTo(xPos + 4, yHi);
+              ctx.stroke();
+            });
+            ctx.restore();
+          }
+        }]
+      });
+    }
+
+    function renderMcStatsTable() {
+      const policies = mcData.policies.filter(p => mcVisiblePolicies.has(p));
+      const table = document.getElementById("mcStatsTable");
+      let html = "<thead><tr><th>Metric</th>";
+      policies.forEach(p => { html += `<th>${p}</th>`; });
+      html += "</tr></thead><tbody>";
+
+      mcData.metrics.forEach(metric => {
+        if (MC_SKIP_METRICS.has(metric)) return;
+        const label = MC_METRIC_LABELS[metric] || metric;
+        html += `<tr><td class="metric-name">${label}</td>`;
+        let bestVal = null;
+        const lowerBetter = MC_LOWER_BETTER.has(metric);
+
+        const statsArr = policies.map(p => mcStats(mcData.trials[p]?.[metric] || []));
+        statsArr.forEach(s => {
+          if (bestVal === null || (lowerBetter ? s.mean < bestVal : s.mean > bestVal)) bestVal = s.mean;
+        });
+
+        statsArr.forEach(s => {
+          const isBest = Math.abs(s.mean - bestVal) < 0.001;
+          const cls = isBest ? " class=\"best\"" : "";
+          html += `<td${cls}>${s.mean.toFixed(2)} <span style="color:var(--muted);font-size:0.68rem">+/-${s.ci95.toFixed(2)}</span></td>`;
+        });
+        html += "</tr>";
+      });
+      html += "</tbody>";
+      table.innerHTML = html;
+    }
+
+    function renderMcPairwise() {
+      if (!mcData) return;
+      const pA = document.getElementById("mcCompareA").value;
+      const pB = document.getElementById("mcCompareB").value;
+      const container = document.getElementById("mcPairwise");
+
+      if (!pA || !pB || pA === pB) {
+        container.innerHTML = "<p style='color:var(--muted)'>Select two different policies to compare.</p>";
+        return;
+      }
+
+      let html = "<table style='width:100%;font-size:0.75rem;border-collapse:collapse'>";
+      html += `<tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:0.3rem">Metric</th><th>Delta</th><th>Sig?</th></tr>`;
+
+      mcData.metrics.forEach(metric => {
+        if (MC_SKIP_METRICS.has(metric)) return;
+        const sA = mcStats(mcData.trials[pA]?.[metric] || []);
+        const sB = mcStats(mcData.trials[pB]?.[metric] || []);
+        const delta = sA.mean - sB.mean;
+        const lower = MC_LOWER_BETTER.has(metric);
+        const ciOverlap = (sA.mean - sA.ci95) <= (sB.mean + sB.ci95) && (sB.mean - sB.ci95) <= (sA.mean + sA.ci95);
+        const significant = !ciOverlap;
+        const aWins = lower ? delta < 0 : delta > 0;
+        const label = MC_METRIC_LABELS[metric] || metric;
+
+        let sigClass = "mc-sig-none";
+        let sigLabel = "~";
+        if (significant) {
+          sigClass = aWins ? "mc-sig-pos" : "mc-sig-neg";
+          sigLabel = aWins ? `${pA} wins` : `${pB} wins`;
+        }
+
+        html += `<tr style="border-bottom:1px solid var(--border)">`;
+        html += `<td style="padding:0.25rem">${label}</td>`;
+        html += `<td style="text-align:center;padding:0.25rem">${delta >= 0 ? "+" : ""}${delta.toFixed(2)}</td>`;
+        html += `<td style="text-align:center;padding:0.25rem" class="${sigClass}">${sigLabel}</td>`;
+        html += `</tr>`;
+      });
+      html += "</table>";
+      container.innerHTML = html;
+    }
+
+    // --- Rank Summary Bar ---
+    let mcRankChart = null;
+
+    function mcIsLowerBetter(m) {
+      return MC_LOWER_BETTER.has(m);
+    }
+
+    function renderMcRank() {
+      if (!mcData) return;
+      const policies = mcData.policies.filter(p => mcVisiblePolicies.has(p));
+      const ctx = document.getElementById("mcRankChart").getContext("2d");
+      if (mcRankChart) mcRankChart.destroy();
+
+      const wins = {}, ties = {}, losses = {};
+      policies.forEach(p => { wins[p] = 0; ties[p] = 0; losses[p] = 0; });
+
+      mcData.metrics.forEach(metric => {
+        if (MC_SKIP_METRICS.has(metric)) return;
+        const statsMap = {};
+        policies.forEach(p => { statsMap[p] = mcStats(mcData.trials[p]?.[metric] || []); });
+        const lower = mcIsLowerBetter(metric);
+
+        policies.forEach(p => {
+          let isWinner = true, isTied = false;
+          policies.forEach(other => {
+            if (other === p) return;
+            const sP = statsMap[p], sO = statsMap[other];
+            const pBetter = lower ? sP.mean < sO.mean : sP.mean > sO.mean;
+            const overlap = (sP.mean - sP.ci95) <= (sO.mean + sO.ci95) && (sO.mean - sO.ci95) <= (sP.mean + sP.ci95);
+            if (overlap) isTied = true;
+            if (!pBetter && !overlap) isWinner = false;
+          });
+          if (isWinner && !isTied) wins[p]++;
+          else if (isTied) ties[p]++;
+          else losses[p]++;
+        });
+      });
+
+      mcRankChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: policies,
+          datasets: [
+            { label: "Wins", data: policies.map(p => wins[p]), backgroundColor: "#2ea04399", borderColor: "#2ea043", borderWidth: 1 },
+            { label: "Ties", data: policies.map(p => ties[p]), backgroundColor: "#d2992244", borderColor: "#d29922", borderWidth: 1 },
+            { label: "Losses", data: policies.map(p => losses[p]), backgroundColor: "#f8514944", borderColor: "#f85149", borderWidth: 1 },
+          ]
+        },
+        options: {
+          indexAxis: "y",
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            x: { stacked: true, ticks: { color: "#8b949e" }, grid: { color: "#21262d" } },
+            y: { stacked: true, ticks: { color: "#8b949e" }, grid: { color: "#21262d" } }
+          },
+          plugins: {
+            legend: { position: "bottom", labels: { color: "#8b949e", font: { size: 10 }, boxWidth: 10 } }
+          }
+        }
+      });
+    }
+
+    // --- Winner Heatmap ---
+    function renderMcHeatmap() {
+      if (!mcData) return;
+      const policies = mcData.policies.filter(p => mcVisiblePolicies.has(p));
+      const container = document.getElementById("mcHeatmap");
+      if (policies.length < 2) { container.innerHTML = ""; return; }
+
+      const results = {};
+      policies.forEach(pA => {
+        results[pA] = {};
+        policies.forEach(pB => { results[pA][pB] = { wins: 0, losses: 0, ties: 0 }; });
+      });
+
+      mcData.metrics.forEach(metric => {
+        if (MC_SKIP_METRICS.has(metric)) return;
+        const lower = mcIsLowerBetter(metric);
+        policies.forEach(pA => {
+          policies.forEach(pB => {
+            if (pA === pB) return;
+            const sA = mcStats(mcData.trials[pA]?.[metric] || []);
+            const sB = mcStats(mcData.trials[pB]?.[metric] || []);
+            const overlap = (sA.mean - sA.ci95) <= (sB.mean + sB.ci95) && (sB.mean - sB.ci95) <= (sA.mean + sA.ci95);
+            if (overlap) { results[pA][pB].ties++; return; }
+            const aWins = lower ? sA.mean < sB.mean : sA.mean > sB.mean;
+            if (aWins) results[pA][pB].wins++;
+            else results[pA][pB].losses++;
+          });
+        });
+      });
+
+      let html = "<table style='width:100%;font-size:0.72rem;border-collapse:collapse;text-align:center'>";
+      html += "<tr><th style='padding:0.3rem;border:1px solid var(--border)'></th>";
+      policies.forEach(p => { html += `<th style="padding:0.3rem;border:1px solid var(--border);color:var(--text)">${p}</th>`; });
+      html += "</tr>";
+
+      policies.forEach(pA => {
+        html += `<tr><td style="padding:0.3rem;border:1px solid var(--border);color:var(--text);font-weight:600;text-align:left">${pA}</td>`;
+        policies.forEach(pB => {
+          if (pA === pB) {
+            html += `<td style="padding:0.3rem;border:1px solid var(--border);background:#161b22">—</td>`;
+            return;
+          }
+          const r = results[pA][pB];
+          const total = r.wins + r.losses + r.ties;
+          const ratio = total > 0 ? r.wins / total : 0;
+          let bg, color;
+          if (ratio > 0.6) { bg = `rgba(46,160,67,${0.15 + ratio * 0.3})`; color = "#3fb950"; }
+          else if (ratio < 0.4) { bg = `rgba(248,81,73,${0.15 + (1 - ratio) * 0.2})`; color = "#f85149"; }
+          else { bg = "rgba(210,153,34,0.1)"; color = "#d29922"; }
+          html += `<td style="padding:0.3rem;border:1px solid var(--border);background:${bg};color:${color};font-weight:600" title="${pA} vs ${pB}: ${r.wins}W/${r.ties}T/${r.losses}L">${r.wins}/${r.ties}/${r.losses}</td>`;
+        });
+        html += "</tr>";
+      });
+      html += "</table>";
+      html += `<div style="font-size:0.65rem;color:var(--muted);margin-top:0.3rem">Cells: Wins/Ties/Losses (row vs column). Green = row dominates.</div>`;
+      container.innerHTML = html;
+    }
+
   })();
   </script>
 </body>

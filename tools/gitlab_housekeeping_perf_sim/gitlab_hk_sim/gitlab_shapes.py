@@ -53,7 +53,7 @@ def mr_shape(mr: MergeRequest, project: Project, base_url: str) -> dict[str, Any
             "head_sha": mr.sha,
             "start_sha": mr.rebased_target_sha,
         },
-        "labels": mr.labels + [f"tenant-{d}" for d in (mr.tenant_domains or [])],
+        "labels": mr.labels,
         "web_url": web_url,
         "work_in_progress": mr.draft,
         "merge_when_pipeline_succeeds": False,
@@ -61,6 +61,7 @@ def mr_shape(mr: MergeRequest, project: Project, base_url: str) -> dict[str, Any
         "has_conflicts": False,
         "blocking_discussions_resolved": True,
         "author": {"id": 100, "username": "sim-author", "name": "Sim Author"},
+        "approved_at": mr.approved_at,
         "assignees": [],
         "reviewers": [],
         "pipeline": _pipeline_summary(mr.latest_pipeline())
@@ -145,13 +146,17 @@ def compare_shape(
 
 
 def label_event_shape(
-    event_id: int, label_name: str, action: str = "add"
+    event_id: int,
+    label_name: str,
+    action: str = "add",
+    created_at: str = "2024-01-01T00:00:00Z",
 ) -> dict[str, Any]:
     return {
         "id": event_id,
         "label": {"id": event_id, "name": label_name},
         "action": action,
-        "created_at": "2024-01-01T00:00:00Z",
+        "created_at": created_at,
+        "user": {"username": "sim-bot"},
     }
 
 

@@ -13,7 +13,7 @@ from fastapi import APIRouter, Query, Request, Response
 from . import gitlab_shapes as shapes
 from .metrics import MetricsCollector
 from .mutations import cancel_pipeline, merge_mr, rebase_mr, tick
-from .state import MRState, PipelineStatus, SimState
+from .state import MERGE_LABELS_SET, Commit, MRState, PipelineStatus, SimState
 
 gitlab_router = APIRouter()
 sim_router = APIRouter(prefix="/__sim")
@@ -191,8 +191,16 @@ def get_mr_label_events(
     if mr is None:
         return []
 
+    default_ts = "2024-01-01T00:00:00Z"
     events = [
-        shapes.label_event_shape(i + 1, label) for i, label in enumerate(mr.labels)
+        shapes.label_event_shape(
+            i + 1,
+            label,
+            created_at=(
+                mr.approved_at if label in MERGE_LABELS_SET else default_ts
+            ),
+        )
+        for i, label in enumerate(mr.labels)
     ]
     return _paginate(events, page, per_page, response)
 
@@ -228,8 +236,6 @@ def get_repository_commits(
 ) -> list:
     _record_api_call(request, "GET /projects/:id/repository/commits")
     sim_state = _get_state(request)
-
-    from .state import Commit
 
     target_commit = Commit(
         id=sim_state.project.target_head,
@@ -386,6 +392,39 @@ def sim_state_endpoint(request: Request) -> dict:
     """Return current simulation state."""
     sim_state = _get_state(request)
     return sim_state.to_dict()
+
+
+@sim_router.get("/merged_mrs")
+def sim_merged_mrs(request: Request) -> list:
+    """Return merged MRs with wait-time data for starvation analysis."""
+    sim_state = _get_state(request)
+    metrics = _get_metrics(request)
+
+    merge_events = [e for e in metrics.events if e.get("event") == "merge"]
+    merge_tick_map = {e["mr_iid"]: e["tick"] for e in merge_events}
+
+    result = []
+    for mr in sim_state.merge_requests:
+        if mr.state != MRState.MERGED:
+            continue
+        merge_tick = merge_tick_map.get(mr.iid, 0)
+        arrival = max(0, mr.arrival_tick)
+        wait = merge_tick - arrival
+        labels = mr.labels
+        priority = "unknown"
+        for lbl in labels:
+            if lbl.startswith("bot/approved:"):
+                priority = lbl.split(":", 1)[1].strip()
+                break
+        result.append({
+            "iid": mr.iid,
+            "arrival_tick": arrival,
+            "merge_tick": merge_tick,
+            "wait_ticks": wait,
+            "priority": priority,
+            "title": mr.title,
+        })
+    return result
 
 
 @sim_router.post("/reset")
